@@ -6,29 +6,33 @@ def get_fea(args):
     args.featurizer_out_dim = net.in_features  # pass this to args
     return net
 
-def accuracy(network, loader, weights, usedpredict='p'):
+def accuracy(network, loader, weights, device='cuda'):
+    """Compute accuracy with proper model state handling"""
+    was_training = network.training
+    network.eval()
+    
     correct = 0
     total = 0
-    weights_offset = 0
-
-    network.eval()
+    
     with torch.no_grad():
         for data in loader:
-            x = data[0].cuda().float()
-            y = data[1].cuda().long()
-            p = network.predict(x) if usedpredict == 'p' else network.predict1(x)
-
+            inputs = data[0].to(device).float()
+            labels = data[1].to(device).long()
+            
+            outputs = network.predict(inputs)
+            
             if weights is None:
-                batch_weights = torch.ones(len(x))
+                batch_weights = torch.ones(len(inputs))
             else:
-                batch_weights = weights[weights_offset:weights_offset + len(x)]
-                weights_offset += len(x)
-
-            batch_weights = batch_weights.cuda()
-            if p.size(1) == 1:
-                correct += (p.gt(0).eq(y).float() * batch_weights.view(-1, 1)).sum().item()
-            else:
-                correct += (p.argmax(1).eq(y).float() * batch_weights).sum().item()
+                batch_weights = weights
+            
+            batch_weights = batch_weights.to(device)
+            _, predicted = torch.max(outputs, 1)
+            correct += (predicted == labels).float().mul(batch_weights).sum().item()
             total += batch_weights.sum().item()
-    network.train()
-    return correct / total
+    
+    # Restore original training state
+    if was_training:
+        network.train()
+    
+    return correct / total if total > 0 else 0
