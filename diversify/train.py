@@ -16,7 +16,7 @@ from utils.util import (
     train_valid_target_eval_names,
     alg_loss_dict,
     print_environ,
-    save_checkpoint  # Added import
+    save_checkpoint
 )
 from datautil.getdataloader_single import get_act_dataloader
 from uci_loader import get_uci_har_dataloader
