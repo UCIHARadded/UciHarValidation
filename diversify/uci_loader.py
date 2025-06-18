@@ -6,6 +6,7 @@ import os
 import datautil.actdata.util as actutil
 from datautil.util import combindataset, subdataset
 import datautil.actdata.cross_people as cross_people
+from sklearn.model_selection import train_test_split  # Added import
 
 task_act = {'cross_people': cross_people}
 
@@ -59,6 +60,7 @@ def get_act_dataloader(args):
 def get_uci_har_dataloader(args):
     print("[INFO] Using UCI HAR dataset loader")
 
+    # Load original splits
     X_train, y_train, s_train = load_group(os.path.join(args.data_dir, 'train'), args)
     X_test, y_test, s_test = load_group(os.path.join(args.data_dir, 'test'), args)
 
@@ -70,13 +72,56 @@ def get_uci_har_dataloader(args):
     s_train = torch.tensor([sid_to_domain[int(s)] for s in s_train], dtype=torch.long)
     s_test = torch.tensor([sid_to_domain[int(s)] for s in s_test], dtype=torch.long)
 
-    train_dataset = TensorDataset(X_train, y_train, s_train, torch.zeros_like(s_train), s_train)
-    test_dataset = TensorDataset(X_test, y_test, s_test, torch.zeros_like(s_test), s_test)
+    # Split original training data into train/validation (80/20)
+    indices = np.arange(len(y_train))
+    
+    # Stratified split preserves activity label distribution
+    train_idx, val_idx = train_test_split(
+        indices,
+        test_size=0.2,  # 20% validation
+        random_state=args.seed,
+        stratify=y_train.numpy()  # Maintain class balance
+    )
 
+    # Create datasets
+    train_dataset = TensorDataset(
+        X_train[train_idx], 
+        y_train[train_idx], 
+        s_train[train_idx],
+        torch.zeros_like(s_train[train_idx]), 
+        s_train[train_idx]
+    )
+    
+    valid_dataset = TensorDataset(
+        X_train[val_idx], 
+        y_train[val_idx], 
+        s_train[val_idx],
+        torch.zeros_like(s_train[val_idx]), 
+        s_train[val_idx]
+    )
+    
+    target_dataset = TensorDataset(
+        X_test, 
+        y_test, 
+        s_test,
+        torch.zeros_like(s_test), 
+        s_test
+    )
+
+    # Create dataloaders
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.N_WORKERS)
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.N_WORKERS)
+    valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.N_WORKERS)
+    target_loader = DataLoader(target_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.N_WORKERS)
 
-    return train_loader, train_loader, test_loader, test_loader, train_dataset, test_dataset, test_dataset
+    return (
+        train_loader, 
+        train_loader,  # noshuffle version
+        valid_loader, 
+        target_loader, 
+        train_dataset, 
+        valid_dataset, 
+        target_dataset
+    )
 
 
 def load_group(folder, args):
