@@ -44,14 +44,14 @@ def print_args(args, print_list):
 def print_row(row, colwidth=10, latex=False):
     if latex:
         sep = " & "
-        end_ = "\\"
+        end_ = "\\\\"
     else:
         sep = "  "
         end_ = ""
 
     def format_val(x):
         if np.issubdtype(type(x), np.floating):
-            x = "{:.10f}".format(x)
+            x = "{:.6f}".format(x)
         return str(x).ljust(colwidth)[:colwidth]
     print(sep.join([format_val(x) for x in row]), end_)
 
@@ -64,6 +64,12 @@ def print_environ():
     print("\tCUDNN: {}".format(torch.backends.cudnn.version()))
     print("\tNumPy: {}".format(np.__version__))
     print("\tPIL: {}".format(PIL.__version__))
+
+def save_checkpoint(state, filename='checkpoint.pth'):
+    """Save training checkpoint"""
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    torch.save(state, filename)
+    print(f"Checkpoint saved to {filename}")
 
 class Tee:
     def __init__(self, fname, mode="a"):
@@ -127,7 +133,7 @@ def get_args():
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--task', type=str, default="cross_people")
     parser.add_argument('--test_envs', type=int, nargs='+', default=[0])
-    parser.add_argument('--output', type=str, default="train_output")
+    parser.add_argument('--output', type=str, default="train_output", help="Output directory for results")
     parser.add_argument('--weight_decay', type=float, default=5e-4)
 
     args = parser.parse_args()
@@ -136,10 +142,11 @@ def get_args():
         args.domain_num = 30  # There are 30 subjects in total in UCI HAR
     args.steps_per_epoch = 10000000000
     args.data_dir = args.data_file + args.data_dir
-    os.environ['CUDA_VISIBLE_DEVICS'] = args.gpu_id
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
     os.makedirs(args.output, exist_ok=True)
     sys.stdout = Tee(os.path.join(args.output, 'out.txt'))
     sys.stderr = Tee(os.path.join(args.output, 'err.txt'))
     args = act_param_init(args)
     args.num_classes = 6
+    args.output_dir = args.output  # Add output_dir attribute
     return args
