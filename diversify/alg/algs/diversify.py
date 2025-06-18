@@ -29,16 +29,14 @@ class Diversify(Algorithm):
             args.featurizer_out_dim, args.bottleneck, args.layer)
         self.aclassifier = common_network.feat_classifier(args.bottleneck, args.num_classes * args.latent_domain_num)
 
-        # Placeholder for dclassifier to be initialized later
         self.dclassifier = None
         self.discriminator = Adver_network.Discriminator(
             args.bottleneck, args.dis_hidden, args.latent_domain_num)
 
         self.args = args
         self.dclassifier_initialized = False
-        self.domain_labels = None  # Placeholder for domain labels
+        self.domain_labels = None
 
-    # UPDATED _initialize_dclassifier method to accept a dataloader
     def _initialize_dclassifier(self, loader):
         if not self.dclassifier_initialized:
             self.featurizer.eval()
@@ -60,13 +58,11 @@ class Diversify(Algorithm):
         all_c1 = minibatch[1].cuda().long()
         all_d1 = minibatch[2].cuda().long()
         
-        # Add domain validation
         assert all_d1.min() >= 0 and all_d1.max() < self.args.latent_domain_num, \
             f"Domain labels out-of-range [min={all_d1.min()}, max={all_d1.max()}] for {self.args.latent_domain_num} domains"
 
         z1 = self.dbottleneck(self.featurizer(all_x1))
         
-        # We assume dclassifier is already initialized by train.py
         assert self.dclassifier_initialized, "dclassifier not initialized!"
 
         disc_in1 = Adver_network.ReverseLayerF.apply(z1, self.args.alpha1)
@@ -88,11 +84,12 @@ class Diversify(Algorithm):
         all_c = minibatches[1].cuda().long()
         all_d = minibatches[2].cuda().long()
         
-        # Add domain validation
         assert all_d.min() >= 0 and all_d.max() < self.args.latent_domain_num, \
             f"Domain labels out-of-range in update_a [min={all_d.min()}, max={all_d.max()}]"
 
         all_y = all_d * self.args.num_classes + all_c
+
+        # Removed debug prints - kept assertions for safety
         assert all_y.min() >= 0, "Label contains negative index!"
         assert all_y.max() < self.args.num_classes * self.args.latent_domain_num, "Label exceeds max class index!"
 
@@ -105,35 +102,22 @@ class Diversify(Algorithm):
         opt.step()
         return {'class': classifier_loss.item()}
     
-    # NEW METHOD: Add set_dlabel implementation
     def set_dlabel(self, loader):
-        """
-        Placeholder for domain label setting
-        """
-        print("[INFO] set_dlabel called - no operation needed for Diversify")
+        """Placeholder for domain label setting"""
         pass
     
-    # NEW METHOD: Add update implementation
     def update(self, minibatch, opt):
-        """
-        Domain-invariant feature learning step
-        """
+        """Domain-invariant feature learning step"""
         all_x = minibatch[0].cuda().float()
         all_y = minibatch[1].cuda().long()
         
-        # Forward pass through main classifier
         features = self.featurizer(all_x)
         features = self.bottleneck(features)
         logits = self.classifier(features)
         
-        # Calculate classification loss
         class_loss = F.cross_entropy(logits, all_y)
-        
-        # Add any domain-invariant learning components here
-        # For now, we'll just use classification loss
         total_loss = class_loss
         
-        # Backpropagation
         opt.zero_grad()
         total_loss.backward()
         opt.step()
@@ -141,8 +125,35 @@ class Diversify(Algorithm):
         return {
             'class': class_loss.item(),
             'total': total_loss.item(),
-            'dis': 0.0  # Placeholder if not using domain loss here
+            'dis': 0.0
         }
+    
+    # Evaluation mode handling
+    def eval(self):
+        """Switch to evaluation mode"""
+        super().eval()
+        self.featurizer.eval()
+        self.dbottleneck.eval()
+        self.ddiscriminator.eval()
+        self.bottleneck.eval()
+        self.classifier.eval()
+        self.abottleneck.eval()
+        self.aclassifier.eval()
+        if self.dclassifier:
+            self.dclassifier.eval()
+    
+    def train(self, mode=True):
+        """Switch to training mode"""
+        super().train(mode)
+        self.featurizer.train(mode)
+        self.dbottleneck.train(mode)
+        self.ddiscriminator.train(mode)
+        self.bottleneck.train(mode)
+        self.classifier.train(mode)
+        self.abottleneck.train(mode)
+        self.aclassifier.train(mode)
+        if self.dclassifier:
+            self.dclassifier.train(mode)
 
     def predict(self, x):
         return self.classifier(self.bottleneck(self.featurizer(x)))
